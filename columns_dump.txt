@@ -1,0 +1,10 @@
+
+--- Pattern: data/raw/train/Study_04/*Visit Projection*.xlsx ---
+File: Study 4_Visit Projection Tracker_10NOV2025_updated.xlsx
+Columns: ['Country', 'Site', 'Subject', 'Visit', 'Projected Date', '# Days Outstanding']
+First Row: {'Country': 'POL', 'Site': 'Site 134', 'Subject': 'Subject 1182', 'Visit': 'Week 24', 'Projected Date': Timestamp('2025-03-28 00:00:00'), '# Days Outstanding': 231}
+
+--- Pattern: data/raw/train/Study_04/*Missing*Page*.xlsx ---
+File: Study 4_Missing_page_report_13Nov2025_updated.xlsx
+Columns: ['Study Name', 'SiteGroupName(CountryName)', 'SiteNumber', 'SubjectName', 'Overall Subject Status', 'Visit Level Subject Status', 'FolderName', 'Visit date', 'Form Type (Summary or Visit)', 'FormName', 'No. #Days Page Missing']
+First Row: {'Study Name': 'Study 4', 'SiteGroupName(CountryName)': 'GBR', 'SiteNumber': 'Site 158', 'SubjectName': 'Subject 1442', 'Overall Subject Status': nan, 'Visit Level Subject Status': nan, 'FolderName': 'Antineoplastic - Medication', 'Visit date': '02-Sep-2025', 'Form Type (Summary or Visit)': 'Summary Page', 'FormName': 'Form 1', 'No. #Days Page Missing': 73}

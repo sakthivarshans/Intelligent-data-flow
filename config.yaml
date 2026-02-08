@@ -1,0 +1,26 @@
+
+data:
+  raw_train: "data/raw/train"
+  raw_test: "data/raw/test"
+  processed: "data/processed"
+  baseline: "data/baseline"
+  baseline_file: "baseline_metrics.json"
+  predictions_file: "predictions.csv"
+  evaluation_report: "evaluation_report.md"
+
+studies:
+  train_studies: ["Study_01", "Study_02", "Study_04", "Study_05", "Study_06", "Study_07", "Study_08", "Study_09", "Study_10", "Study_11", "Study_13", "Study_14", "Study_15", "Study_16", "Study_17", "Study_18", "Study_19", "Study_20", "Study_21", "Study_22", "Study_23"]
+
+  test_studies: ["Study_24", "Study_25"]
+
+thresholds:
+  risk:
+    query_rate_multiplier: 2.0
+    visit_delay_percentile: "P75"
+    missing_pages_percentile: "P90"
+    
+evaluation:
+  metrics: ["precision", "recall", "f1", "mae", "rmse"]
+
+app:
+  title: "Clinical Insight-Driven Data Flow & Platform"

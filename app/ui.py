@@ -1,0 +1,295 @@
+import streamlit as st
+import pandas as pd
+import json
+import os
+import yaml
+import glob
+import plotly.express as px
+
+# Load config
+try:
+    with open("config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    config = {}
+
+st.set_page_config(page_title="Clinical Insight Platform", layout="wide")
+
+st.title("Integrated Insight-Driven Data Flow & Predictive Analytics")
+
+# Sidebar navigation
+page = st.sidebar.radio("Navigation", ["Overview", "Baselines", "Predictions", "Evaluation", "Graphs"])
+
+def load_test_visit_data(config):
+    """Load and aggregate visit data for test studies for graphing."""
+    # This helper collects visit data from all test studies
+    all_data = []
+    test_studies = config.get('studies', {}).get('test_studies', [])
+    raw_test_path = config.get('data', {}).get('raw_test', 'data/raw/test')
+    
+    for study_id in test_studies:
+        path = os.path.join(raw_test_path, study_id)
+        # Look for the visit file
+        files = glob.glob(os.path.join(path, "*Visit Projection*.xlsx"))
+        if not files:
+            files = glob.glob(os.path.join(path, "*Visit*.xlsx"))
+        
+        for f in files:
+            try:
+                df = pd.read_excel(f)
+                # Check if we have the date and delay columns we need for plotting
+                if 'Projected Date' in df.columns and '# Days Outstanding' in df.columns:
+                    temp = df[['Projected Date', '# Days Outstanding']].copy()
+                    # Convert to datetime so we can plot it nicely
+                    temp['Projected Date'] = pd.to_datetime(temp['Projected Date'], errors='coerce')
+                    # Make sure delay is a number
+                    temp['# Days Outstanding'] = pd.to_numeric(temp['# Days Outstanding'], errors='coerce').fillna(0)
+                    temp['study_id'] = study_id
+                    all_data.append(temp)
+            except Exception as e:
+                pass
+                
+    if all_data:
+        # Combine everything into one table
+        return pd.concat(all_data, ignore_index=True)
+    return pd.DataFrame()
+
+def load_test_quality_data(config):
+    """Load and aggregate data quality data for test studies for graphing."""
+    # This helper collects data quality issues (missing pages)
+    all_data = []
+    test_studies = config.get('studies', {}).get('test_studies', [])
+    raw_test_path = config.get('data', {}).get('raw_test', 'data/raw/test')
+    
+    for study_id in test_studies:
+        path = os.path.join(raw_test_path, study_id)
+        # Use simple pattern to find missing pages file
+        files = glob.glob(os.path.join(path, "*Missing*Page*.xlsx"))
+        
+        for f in files:
+            try:
+                df = pd.read_excel(f)
+                # We need the Visit date to show trends over time
+                if 'Visit date' in df.columns:
+                    temp = pd.DataFrame()
+                    temp['date'] = pd.to_datetime(df['Visit date'], errors='coerce')
+                    temp['missing_count'] = 1 # Each row is a missing page instance
+                    temp['study_id'] = study_id
+                    all_data.append(temp)
+            except Exception as e:
+                pass
+                
+    if all_data:
+        return pd.concat(all_data, ignore_index=True)
+    return pd.DataFrame()
+
+
+if page == "Overview":
+    st.header("Problem Statement")
+    st.write("""
+    Clinical trials generate heterogeneous operational datasets. This platform integrates these signals to:
+    - **Harmonize** study-level Excel reports.
+    - **Learn** operational baselines from historical studies (1-23).
+    - **Predict** operational risk, delays, and data quality degradation for unseen studies (24-25).
+    """)
+    
+    st.info(f"**Train Studies**: {len(config.get('studies', {}).get('train_studies', []))}")
+    st.info(f"**Test Studies**: {len(config.get('studies', {}).get('test_studies', []))}")
+
+elif page == "Baselines":
+    st.header("Statistical Baselines (Training Phase)")
+    
+    baseline_path = os.path.join(config.get('data', {}).get('baseline', ''), config.get('data', {}).get('baseline_file', ''))
+    if os.path.exists(baseline_path):
+        with open(baseline_path, 'r') as f:
+            baseline = json.load(f)
+        
+        # Convert to DataFrame for display
+        data = []
+        for metric, stats in baseline.items():
+            stats['metric'] = metric
+            data.append(stats)
+        
+        df_base = pd.DataFrame(data)
+        cols = ['metric', 'mean', 'median', 'p75', 'p90', 'std']
+        st.dataframe(df_base[cols], use_container_width=True)
+        
+        st.json(baseline)
+    else:
+        st.warning("Baseline file not found. Run the pipeline first.")
+
+elif page == "Predictions":
+    st.header("Risk Predictions (Test Studies)")
+    
+    # Load the predictions file generated by main.py
+    pred_path = config.get('data', {}).get('predictions_file', 'predictions.csv')
+    if os.path.exists(pred_path):
+        df_pred = pd.read_csv(pred_path)
+        
+        # Function to color code the table
+        # Red for High risk, Orange for Medium, Green for Low
+        def color_risk(val):
+            color = 'green'
+            if val == 'High': color = 'red'
+            elif val == 'Medium': color = 'orange'
+            return f'color: {color}'
+            
+        # Display the table with colors
+        st.dataframe(df_pred.style.applymap(color_risk, subset=['risk_level']), use_container_width=True)
+        
+        # Allow user to download the results
+        st.download_button(
+            "Download Predictions CSV",
+            df_pred.to_csv(index=False).encode('utf-8'),
+            "predictions.csv",
+            "text/csv"
+        )
+    else:
+        st.warning("Predictions file not found. Run the pipeline first.")
+
+
+elif page == "Evaluation":
+    st.header("Model Evaluation")
+    
+    eval_path = config.get('data', {}).get('evaluation_report', 'evaluation_report.md')
+    if os.path.exists(eval_path):
+        with open(eval_path, 'r') as f:
+            report = f.read()
+        st.markdown(report)
+        
+        st.info("ℹ️ Recall reflects detection of severe operational degradation events, not internal rule consistency.")
+
+        st.download_button(
+            "Download Evaluation Report",
+            report,
+            "evaluation_report.md",
+            "text/markdown"
+        )
+    else:
+        st.warning("Evaluation report not found. Run the pipeline first.")
+
+elif page == "Graphs":
+    st.header("Operational Trends & Analysis")
+    
+    # Dropdown to choose how we want to group the data (Daily, Weekly, or Monthly)
+    time_agg = st.selectbox("Detailed View (Time Aggregation)", ["Daily", "Weekly", "Monthly"])
+    
+    # --- Graph 1: Visit Delay Trend ---
+    st.subheader("1. Visit Delay Trend")
+    visit_df = load_test_visit_data(config)
+    
+    if not visit_df.empty:
+        # Remove rows where date is missing
+        visit_df = visit_df.dropna(subset=['Projected Date'])
+        
+        # Group by the selected time period
+        if time_agg == "Weekly":
+            visit_df['period'] = visit_df['Projected Date'].dt.to_period('W').apply(lambda r: r.start_time)
+        elif time_agg == "Monthly":
+            visit_df['period'] = visit_df['Projected Date'].dt.to_period('M').apply(lambda r: r.start_time)
+        else:
+            visit_df['period'] = visit_df['Projected Date']
+            
+        # Calculate the average delay for each period
+        trend = visit_df.groupby('period')['# Days Outstanding'].mean()
+        st.line_chart(trend)
+        st.write("This graph shows how visit delays (days outstanding) change over time. Higher values indicate greater deviation from the planned schedule.")
+    else:
+        st.info("No visit projection data found for test studies.")
+
+    st.markdown("---")
+
+    # --- Graph 2: Data Completeness Over Time ---
+    st.subheader("2. Data Completeness Over Time")
+    dq_df = load_test_quality_data(config)
+    
+    if not dq_df.empty:
+        dq_df = dq_df.dropna(subset=['date'])
+        
+        # Group by time period
+        if time_agg == "Weekly":
+            dq_df['period'] = dq_df['date'].dt.to_period('W').apply(lambda r: r.start_time)
+        elif time_agg == "Monthly":
+            dq_df['period'] = dq_df['date'].dt.to_period('M').apply(lambda r: r.start_time)
+        else:
+            dq_df['period'] = dq_df['date']
+            
+        # Count total missing pages per period
+        missing_trend = dq_df.groupby('period')['missing_count'].sum().reset_index()
+        
+        # Calculate a simple "completeness score"
+        # Since we don't know the exact total expected pages, we simplify:
+        # Score = 100 - Number of missing pages. We make sure it doesn't drop below 0.
+        missing_trend['completeness_score'] = missing_trend['missing_count'].apply(lambda x: max(0, 100 - x))
+        
+        st.line_chart(missing_trend.set_index('period')['completeness_score'])
+        st.write("This graph shows data completeness percentage over time. Lower values indicate more missing pages reported.")
+    else:
+        st.info("No data quality missing page reports found for test studies.")
+        
+    st.markdown("---")
+
+    # --- Graph 3: Risk Distribution by Site ---
+    st.subheader("3. Risk Distribution by Site")
+    pred_path = config.get('data', {}).get('predictions_file', 'predictions.csv')
+    if os.path.exists(pred_path):
+        df_pred = pd.read_csv(pred_path)
+        
+        # We start with basic numbers for the bar chart
+        # High Risk = 3, Medium = 2, Low = 1
+        risk_map = {'High': 3, 'Medium': 2, 'Low': 1}
+        df_pred['risk_score'] = df_pred['risk_level'].map(risk_map)
+        
+        if 'site_id' in df_pred.columns:
+             # Plot the risk score for each site
+            st.bar_chart(df_pred.set_index('site_id')['risk_score'])
+            st.write("This chart shows the risk level for each site (High=3, Medium=2, Low=1). Red/High bars require immediate attention.")
+        else:
+            st.write("Risk data available but 'site_id' column missing.")
+    else:
+        st.info("No predictions available.")
+
+    st.markdown("---")
+
+    # --- Graph 4: Baseline vs Test Comparison ---
+    st.subheader("4. Baseline vs Test Comparison")
+    baseline_path = os.path.join(config.get('data', {}).get('baseline', ''), config.get('data', {}).get('baseline_file', ''))
+    
+    if os.path.exists(baseline_path) and os.path.exists(pred_path):
+         with open(baseline_path, 'r') as f:
+            base_data = json.load(f)
+         
+         # We want to compare the historical average (Baseline) vs current performance (Test)
+         # Get Baseline Means
+         b_delay = base_data.get('overdue_visits', {}).get('mean', 0)
+         b_missing = base_data.get('missing_pages_count', {}).get('mean', 0)
+         
+         # Get Test Averages from the data we loaded earlier
+         t_delay = visit_df['# Days Outstanding'].mean() if not visit_df.empty else 0
+         
+         # Approximate missing pages per site for Test
+         t_missing = 0
+         if not dq_df.empty and 'study_id' in dq_df.columns:
+             if 'df_pred' in locals():
+                 num_sites = df_pred['site_id'].nunique()
+                 if num_sites > 0:
+                    t_missing = len(dq_df) / num_sites
+         
+         # Create a small table for the comparison chart
+         comp_data = pd.DataFrame({
+             'Metric': ['Avg Visit Delay (Days)', 'Avg Missing Pages (Per Site)'],
+             'Baseline': [b_delay, b_missing],
+             'Test Study': [t_delay, t_missing]
+         }).set_index('Metric')
+         
+         st.bar_chart(comp_data)
+         st.write("Comparison of key operational metrics between the historical baseline (Train) and the current active studies (Test).")
+    else:
+        st.info("Baseline or prediction data missing.")
+
+
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Developed by Sakthivarshan S**")
+st.sidebar.markdown("Team Name: email2sakthi.s")
+
